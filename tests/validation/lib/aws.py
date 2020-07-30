@@ -179,7 +179,9 @@ class AmazonWebServices(CloudProviderBase):
                 "MaxCount": 1,
                 "TagSpecifications": [{'ResourceType': 'instance', 'Tags': [
                     {'Key': 'Name', 'Value': node_name},
-                    {'Key': 'CICD', 'Value': AWS_CICD_INSTANCE_TAG}]}],
+                    {'Key': 'CICD', 'Value': AWS_CICD_INSTANCE_TAG},
+                    {'Key': 'DoNotDelete', 'Value': 'true'},
+                    {'Key': 'Owner', 'Value': 'Kinara'}]}],
                 "KeyName": key_name,
                 "NetworkInterfaces": [{
                     'DeviceIndex': 0,
