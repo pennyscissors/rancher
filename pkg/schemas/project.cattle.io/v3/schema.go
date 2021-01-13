@@ -529,13 +529,6 @@ func podTypes(schemas *types.Schemas) *types.Schemas {
 			m.Move{From: "readOnlyRootFilesystem", To: "readOnly"},
 			m.Move{From: "runAsUser", To: "uid"},
 		).
-		AddMapperForType(&Version, v1.Container{},
-			m.Move{From: "command", To: "entrypoint"},
-			m.Move{From: "args", To: "command"},
-			mapper.EnvironmentMapper{},
-			&m.Embed{Field: "securityContext"},
-			&m.Embed{Field: "lifecycle"},
-		).
 		AddMapperForType(&Version, v1.ContainerPort{},
 			m.Move{From: "hostIP", To: "hostIp"},
 		).
@@ -582,8 +575,6 @@ func podTypes(schemas *types.Schemas) *types.Schemas {
 		MustImport(&Version, v1.Handler{}, handlerOverride{}).
 		MustImport(&Version, v1.Probe{}, handlerOverride{}).
 		MustImport(&Version, v1.Container{}, struct {
-			Environment          []EnvironmentVar
-			EnvironmentFrom      []EnvironmentFrom
 			InitContainer        bool
 			State                string
 			Transitioning        string
