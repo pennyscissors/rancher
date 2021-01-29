@@ -7,8 +7,8 @@ from .test_rke_cluster_provisioning import rke_config
 # when installing Rancher into a k3s setup
 RANCHER_HA_KUBECONFIG = os.environ.get("RANCHER_HA_KUBECONFIG")
 RANCHER_HA_HOSTNAME = os.environ.get(
-    "RANCHER_HA_HOSTNAME", RANCHER_HOSTNAME_PREFIX + ".qa.rancher.space")
-resource_prefix = RANCHER_HA_HOSTNAME.split(".qa.rancher.space")[0]
+    "RANCHER_HA_HOSTNAME", RANCHER_HOSTNAME_PREFIX + ".eng.rancher.space")
+resource_prefix = RANCHER_HA_HOSTNAME.split(".eng.rancher.space")[0]
 RANCHER_SERVER_URL = "https://" + RANCHER_HA_HOSTNAME
 
 RANCHER_CHART_VERSION = os.environ.get("RANCHER_CHART_VERSION")
@@ -35,8 +35,8 @@ export_cmd = "export KUBECONFIG=" + kubeconfig_path
 
 
 def test_remove_rancher_ha():
-    assert CATTLE_TEST_URL.endswith(".qa.rancher.space"), \
-        "the CATTLE_TEST_URL need to end with .qa.rancher.space"
+    assert CATTLE_TEST_URL.endswith(".eng.rancher.space"), \
+        "the CATTLE_TEST_URL need to end with .eng.rancher.space"
     if not check_if_ok(CATTLE_TEST_URL):
         print("skip deleting clusters within the setup")
     else:
@@ -53,7 +53,7 @@ def test_remove_rancher_ha():
             delete_cluster(client, cluster)
 
     resource_prefix = \
-        CATTLE_TEST_URL.split(".qa.rancher.space")[0].split("//")[1]
+        CATTLE_TEST_URL.split(".eng.rancher.space")[0].split("//")[1]
     delete_resource_in_AWS_by_prefix(resource_prefix)
 
 

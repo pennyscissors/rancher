@@ -35,8 +35,8 @@ namespace = {"p_client": None, "ns": None, "cluster": None, "project": None,
              "c_client": None, "cert_valid": None, "cert_ssc": None,
              "cert_allns_valid": None, "cert_allns_ssc": None, "node_id": None}
 
-route_entry_53_1 = random_test_name('auto-valid') + '.qa.rancher.space'
-route_entry_53_2 = random_test_name('auto-ssc') + '.qa.rancher.space'
+route_entry_53_1 = random_test_name('auto-valid') + '.eng.rancher.space'
+route_entry_53_2 = random_test_name('auto-ssc') + '.eng.rancher.space'
 
 
 def get_ssh_key(ssh_key_name):

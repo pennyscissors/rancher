@@ -2668,8 +2668,8 @@ def delete_resource_in_AWS_by_prefix(resource_prefix):
     AmazonWebServices().delete_db(db_name)
 
     # delete the route 53 record
-    route53_names = [resource_prefix + ".qa.rancher.space.",
-                     resource_prefix + "-internal.qa.rancher.space."]
+    route53_names = [resource_prefix + ".eng.rancher.space.",
+                     resource_prefix + "-internal.eng.rancher.space."]
     for name in route53_names:
         print("deleting the route53 record (if it exists): {}".format(name))
         AmazonWebServices().delete_route_53_record(name)

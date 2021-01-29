@@ -28,8 +28,8 @@ IMAGE_LIST = os.environ.get("RANCHER_IMAGE_LIST", ",".join(
 ARCH = os.environ.get("RANCHER_ARCH", "amd64")
 
 AG_HOST_NAME = random_test_name(HOST_NAME)
-RANCHER_AG_INTERNAL_HOSTNAME = AG_HOST_NAME + "-internal.qa.rancher.space"
-RANCHER_AG_HOSTNAME = AG_HOST_NAME + ".qa.rancher.space"
+RANCHER_AG_INTERNAL_HOSTNAME = AG_HOST_NAME + "-internal.eng.rancher.space"
+RANCHER_AG_HOSTNAME = AG_HOST_NAME + ".eng.rancher.space"
 RESOURCE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                             'resource')
 SSH_KEY_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)),
