@@ -123,8 +123,10 @@ class AmazonWebServices(CloudProviderBase):
                 "TagSpecifications": [
                     {'ResourceType': 'instance',
                      'Tags': [
-                         {'Key': 'Name', 'Value': node_name},
-                         {'Key': 'CICD', 'Value': AWS_CICD_INSTANCE_TAG}
+                        {'Key': 'Name', 'Value': node_name},
+                        {'Key': 'CICD', 'Value': AWS_CICD_INSTANCE_TAG},
+                        {'Key': 'DoNotDelete', 'Value': 'true'},
+                        {'Key': 'Owner', 'Value': 'Steven'}]}],
                      ]}
                 ],
                 "KeyName": key_name,
