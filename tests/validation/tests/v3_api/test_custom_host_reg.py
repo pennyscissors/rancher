@@ -21,7 +21,7 @@ RANCHER_ELASTIC_SEARCH_ENDPOINT = os.environ.get(
 
 def test_add_custom_host():
     aws_nodes = AmazonWebServices().create_multiple_nodes(
-        HOST_COUNT, random_test_name("testsa"+HOST_NAME))
+        HOST_COUNT, random_test_name(HOST_NAME))
     if AGENT_REG_CMD != "":
         for aws_node in aws_nodes:
             additional_options = " --address " + aws_node.public_ip_address + \
