@@ -856,6 +856,8 @@ type RotateCertificates struct {
 type DNSConfig struct {
 	// DNS provider
 	Provider string `yaml:"provider" json:"provider,omitempty"`
+	// Options to configure DNS properties
+	Options map[string]string `yaml:"options" json:"options,omitempty"`
 	// Upstream nameservers
 	UpstreamNameservers []string `yaml:"upstreamnameservers" json:"upstreamnameservers,omitempty"`
 	// ReverseCIDRs

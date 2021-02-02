@@ -47,6 +47,9 @@ const (
 	CoreDNSProvider = "coredns"
 	KubeDNSProvider = "kube-dns"
 	Nodelocal       = "nodelocal"
+
+	CoreDNSPriorityClassNameKey           = "coredns_priority_class_name"
+	CoreDNSAutoscalerPriorityClassNameKey = "coredns_autoscaler_priority_class_name"
 )
 
 var DNSProviders = []string{KubeDNSProvider, CoreDNSProvider}
@@ -365,6 +368,8 @@ func (c *Cluster) deployCoreDNS(ctx context.Context, data map[string]interface{}
 			RollingUpdate: c.DNS.UpdateStrategy.RollingUpdate,
 		},
 		Tolerations: c.DNS.Tolerations,
+		CoreDNSPriorityClassName:           c.DNS.Options[CoreDNSPriorityClassNameKey],
+		CoreDNSAutoscalerPriorityClassName: c.DNS.Options[CoreDNSAutoscalerPriorityClassNameKey],
 	}
 	linearModeBytes, err := json.Marshal(c.DNS.LinearAutoscalerParams)
 	if err != nil {
