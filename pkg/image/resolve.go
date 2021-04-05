@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/pkg/errors"
 	"github.com/rancher/norman/types/convert"
 	v32 "github.com/rancher/rancher/pkg/apis/management.cattle.io/v3"
@@ -23,14 +24,10 @@ import (
 
 type OSType int
 
-type chart struct {
-	dir     string
-	version string
-}
-
 const (
 	Linux OSType = iota
 	Windows
+	SystemChartsRepoDir = "build/system-charts"
 )
 
 func Resolve(image string) string {
@@ -50,8 +47,8 @@ func ResolveWithCluster(image string, cluster *v3.Cluster) string {
 	return image
 }
 
-func getChartAndVersion(path string) (map[string]chart, error) {
-	rtn := map[string]chart{}
+func getChartVersions(path, rancherVersion string) (libhelm.ChartVersions, error) {
+	chartVersions := libhelm.ChartVersions{}
 	helm := libhelm.Helm{
 		LocalPath: path,
 		IconPath:  path,
@@ -61,20 +58,87 @@ func getChartAndVersion(path string) (map[string]chart, error) {
 	if err != nil {
 		return nil, err
 	}
-	for k, versions := range index.IndexFile.Entries {
-		// because versions is sorted in reverse order, the first one will be the latest version
+	for _, versions := range index.IndexFile.Entries {
 		if len(versions) > 0 {
-			newestVersionedChart := versions[0]
-			rtn[k] = chart{
-				dir:     newestVersionedChart.Dir,
-				version: newestVersionedChart.Version}
+			if strings.Contains(path, SystemChartsRepoDir) {
+				versionsInRange, err := getVersionsInRancherMinMaxRange(rancherVersion, versions)
+				if err != nil {
+					return nil, err
+				}
+				chartVersions = append(chartVersions, versionsInRange...)
+			} else {
+				// because versions is sorted in reverse order, the first one will be the latest version
+				latestVersion := versions[0]
+				chartVersions = append(chartVersions, latestVersion)
+			}
 		}
 	}
-
-	return rtn, nil
+	return chartVersions, nil
 }
 
-func pickImagesFromValuesYAML(imagesSet map[string]map[string]bool, charts map[string]chart, basePath, path string, info os.FileInfo, osType OSType) error {
+func getVersionsInRancherMinMaxRange(rancherVersion string, versions libhelm.ChartVersions) (libhelm.ChartVersions, error) {
+	var chartVersions libhelm.ChartVersions
+	for _, v := range versions {
+		questions, err := fetchVersionQuestions(v)
+		if err != nil {
+			return nil, err
+		}
+		// No ok check because a chart without a rancher min/max version is still valid
+		min, _ := questions["rancher_min_version"].(string)
+		max, _ := questions["rancher_max_version"].(string)
+		if len(min) > 0 {
+			rancherSemVer, err := semver.NewVersion(strings.TrimSpace(rancherVersion))
+			if err != nil {
+				return nil, err
+			}
+			minSemVer, err := semver.NewVersion(strings.TrimSpace(min))
+			if err != nil {
+				return nil, err
+			}
+			if len(max) > 0 {
+				maxSemVer, err := semver.NewVersion(strings.TrimSpace(max))
+				if err != nil {
+					return nil, err
+				}
+				// If chart has both min and max version, append if the rancher version is within the [min, max] range
+				if (rancherSemVer.GreaterThan(minSemVer) || rancherSemVer.Equal(minSemVer)) &&
+					(rancherSemVer.LessThan(maxSemVer) || rancherSemVer.Equal(maxSemVer)) {
+					chartVersions = append(chartVersions, v)
+				}
+				continue
+			}
+			// If chart has a min but no max version, append if the rancher version is within the [min, inf) range
+			if rancherSemVer.GreaterThan(minSemVer) || rancherSemVer.Equal(minSemVer) {
+				chartVersions = append(chartVersions, v)
+			}
+		}
+	}
+	if len(chartVersions) <= 0 {
+		// If no chart was appended, append the latest version of it
+		chartVersions = append(chartVersions, versions[0])
+	}
+	return chartVersions, nil
+}
+
+func fetchVersionQuestions(version *libhelm.ChartVersion) (map[interface{}]interface{}, error) {
+	var questions map[interface{}]interface{}
+	for _, path := range version.LocalFiles {
+		basename := filepath.Base(path)
+		if strings.EqualFold(basename, "questions.yaml") || strings.EqualFold(basename, "questions.yml") {
+			data, err := ioutil.ReadFile(path)
+			if err != nil {
+				return nil, err
+			}
+			questions = make(map[interface{}]interface{})
+			if err := yaml.Unmarshal(data, &questions); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return questions, nil
+}
+
+func pickImagesFromValuesYAML(imagesSet map[string]map[string]bool, chartVersions libhelm.ChartVersions, basePath, path string, info os.FileInfo, osType OSType) error {
 	if info.Name() != "values.yaml" {
 		return nil
 	}
@@ -83,9 +147,9 @@ func pickImagesFromValuesYAML(imagesSet map[string]map[string]bool, charts map[s
 		return err
 	}
 	var chartNameAndVersion string
-	for name, chart := range charts {
-		if strings.HasPrefix(relPath, chart.dir) {
-			chartNameAndVersion = fmt.Sprintf("%s:%s", name, chart.version)
+	for _, v := range chartVersions {
+		if strings.HasPrefix(relPath, v.Dir) {
+			chartNameAndVersion = fmt.Sprintf("%s:%s", v.Name, v.Version)
 			break
 		}
 	}
@@ -97,31 +161,28 @@ func pickImagesFromValuesYAML(imagesSet map[string]map[string]bool, charts map[s
 	if err != nil {
 		return err
 	}
-	dataInterface := map[interface{}]interface{}{}
-	if err := yaml.Unmarshal(data, &dataInterface); err != nil {
+	valuesYaml := map[interface{}]interface{}{}
+	if err := yaml.Unmarshal(data, &valuesYaml); err != nil {
 		return err
 	}
 
-	walkthroughMap(dataInterface, func(inputMap map[interface{}]interface{}) {
+	walkthroughMap(valuesYaml, func(inputMap map[interface{}]interface{}) {
 		generateImages(chartNameAndVersion, inputMap, imagesSet, osType)
 	})
 	return nil
 }
 
 func generateImages(chartNameAndVersion string, inputMap map[interface{}]interface{}, output map[string]map[string]bool, osType OSType) {
-	r, repoOk := inputMap["repository"]
-	t, tagOk := inputMap["tag"]
-	if !repoOk || !tagOk {
+	repo, ok := inputMap["repository"].(string)
+	if !ok {
 		return
 	}
-	repo, repoOk := r.(string)
-	if !repoOk {
+	tag, ok := inputMap["tag"]
+	if !ok {
 		return
 	}
-
 	// distinguish images by os
-	os := inputMap["os"]
-	switch os {
+	switch inputMap["os"] {
 	case "windows": // must have indicate `os: windows` if the image is using in Windows cluster
 		if osType != Windows {
 			return
@@ -131,8 +192,7 @@ func generateImages(chartNameAndVersion string, inputMap map[interface{}]interfa
 			return
 		}
 	}
-
-	imageName := fmt.Sprintf("%s:%v", repo, t)
+	imageName := fmt.Sprintf("%s:%v", repo, tag)
 	addSourceToImage(output, imageName, chartNameAndVersion)
 }
 
@@ -154,18 +214,18 @@ func walkthroughMap(inputMap map[interface{}]interface{}, walkFunc func(map[inte
 	}
 }
 
-func GetImages(systemChartPath, chartPath string, k3sUpgradeImages, imagesFromArgs []string, rkeSystemImages map[string]rketypes.RKESystemImages, osType OSType) ([]string, []string, error) {
+func GetImages(systemChartPath, chartPath, rancherVersion string, k3sUpgradeImages, imagesFromArgs []string, rkeSystemImages map[string]rketypes.RKESystemImages, osType OSType) ([]string, []string, error) {
 	// fetch images from system charts
 	imagesSet := make(map[string]map[string]bool)
 	if systemChartPath != "" {
-		if err := fetchImagesFromCharts(systemChartPath, osType, imagesSet); err != nil {
+		if err := fetchImagesFromCharts(systemChartPath, rancherVersion, osType, imagesSet); err != nil {
 			return nil, nil, errors.Wrap(err, "failed to fetch images from system charts")
 		}
 	}
 
 	// fetch images from charts
 	if chartPath != "" {
-		if err := fetchImagesFromCharts(chartPath, osType, imagesSet); err != nil {
+		if err := fetchImagesFromCharts(chartPath, rancherVersion, osType, imagesSet); err != nil {
 			return nil, nil, errors.Wrap(err, "failed to fetch images from charts")
 		}
 	}
@@ -214,8 +274,8 @@ func convertMirroredImages(imagesSet map[string]map[string]bool) {
 	}
 }
 
-func fetchImagesFromCharts(path string, osType OSType, imagesSet map[string]map[string]bool) error {
-	chartVersion, err := getChartAndVersion(path)
+func fetchImagesFromCharts(path, rancherVersion string, osType OSType, imagesSet map[string]map[string]bool) error {
+	chartVersions, err := getChartVersions(path, rancherVersion)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get chart and version from %q", path)
 	}
@@ -224,7 +284,7 @@ func fetchImagesFromCharts(path string, osType OSType, imagesSet map[string]map[
 		if err != nil {
 			return err
 		}
-		return pickImagesFromValuesYAML(imagesSet, chartVersion, path, p, info, osType)
+		return pickImagesFromValuesYAML(imagesSet, chartVersions, path, p, info, osType)
 	})
 	if err != nil {
 		return errors.Wrap(err, "failed to pick images from values.yaml")
