@@ -245,8 +245,6 @@ func imagesText(arch string, targetImages []string) error {
 		if err != nil {
 			return err
 		}
-
-		log.Println("Image:", image)
 		fmt.Fprintln(save, image)
 	}
 
