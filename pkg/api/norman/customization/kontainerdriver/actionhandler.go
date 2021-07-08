@@ -167,12 +167,12 @@ func (lh ListHandler) LinkHandler(apiContext *types.APIContext, next types.Reque
 	var targetRkeSysImages []string
 	switch apiContext.ID {
 	case linuxImages:
-		targetRkeSysImages, _, err = image.GetImages("", "", nil, []string{}, rkeSysImages, image.Linux)
+		targetRkeSysImages, _, err = image.GetImages("", "", "", nil, []string{}, rkeSysImages, image.Linux)
 		if err != nil {
 			return httperror.WrapAPIError(err, httperror.ServerError, "error getting image list for linux platform")
 		}
 	case windowsImages:
-		targetRkeSysImages, _, err = image.GetImages("", "", nil, []string{}, rkeSysImages, image.Windows)
+		targetRkeSysImages, _, err = image.GetImages("", "", "", nil, []string{}, rkeSysImages, image.Windows)
 		if err != nil {
 			return httperror.WrapAPIError(err, httperror.ServerError, "error getting image list for windows platform")
 		}

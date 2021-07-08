@@ -9,6 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 	util "github.com/rancher/rancher/pkg/cluster"
+	kd "github.com/rancher/rancher/pkg/controllers/management/kontainerdrivermetadata"
 	v1 "github.com/rancher/rancher/pkg/generated/norman/core/v1"
 	v3 "github.com/rancher/rancher/pkg/generated/norman/management.cattle.io/v3"
 	libhelm "github.com/rancher/rancher/pkg/helm"
@@ -47,27 +48,21 @@ func ResolveWithCluster(image string, cluster *v3.Cluster) string {
 	return image
 }
 
-func GetImages(systemChartPath, chartPath string, externalImages map[string][]string, imagesFromArgs []string, rkeSystemImages map[string]rketypes.RKESystemImages, osType OSType) ([]string, []string, error) {
-	// fetch images from system charts
+func GetImages(rancherVersion, systemChartsPath, featureChartsPath string, externalImages map[string][]string, imagesFromArgs []string, rkeSystemImages map[string]rketypes.RKESystemImages, osType OSType) ([]string, []string, error) {
 	imagesSet := make(map[string]map[string]bool)
-	if systemChartPath != "" {
-		if err := fetchImagesFromCharts(systemChartPath, osType, imagesSet); err != nil {
-			return nil, nil, errors.Wrap(err, "failed to fetch images from system charts")
-		}
-	}
-
 	// fetch images from charts
-	if chartPath != "" {
-		if err := fetchImagesFromCharts(chartPath, osType, imagesSet); err != nil {
-			return nil, nil, errors.Wrap(err, "failed to fetch images from charts")
-		}
+	systemCharts := SystemCharts{rancherVersion, systemChartsPath, osType}
+	if err := fetchImages(systemCharts, imagesSet); err != nil {
+		return nil, nil, errors.Wrap(err, "failed to fetch images from system-charts")
 	}
+	// featureCharts := FeatureCharts{rancherVersion, featureChartsPath, osType}
+	// if err := fetchImages(featureCharts, imagesSet); err != nil {
+	// 	return nil, nil, errors.Wrap(err, "failed to fetch images from feature-charts")
+	// }
 
 	// fetch images from system images
-	if len(rkeSystemImages) > 0 {
-		if err := fetchImagesFromSystem(rkeSystemImages, osType, imagesSet); err != nil {
-			return nil, nil, errors.Wrap(err, "failed to fetch images from system images")
-		}
+	if err := fetchImagesFromSystem(rkeSystemImages, osType, imagesSet); err != nil {
+		return nil, nil, errors.Wrap(err, "failed to fetch images from system images")
 	}
 
 	setRequirementImages(osType, imagesSet)
@@ -155,13 +150,14 @@ func CreateCatalogImageListConfigMap(cm *v1.ConfigMap, catalog *v3.Catalog) (err
 
 	catalogHash := libhelm.CatalogSHA256Hash(catalog)
 	catalogChartPath := filepath.Join(libhelm.CatalogCache, catalogHash)
+	rancherVersion := kd.GetRancherVersion()
 
-	windowsImages, _, err = GetImages(catalogChartPath, "", nil, []string{}, nil, Windows)
+	windowsImages, _, err = GetImages(rancherVersion, catalogChartPath, "", nil, []string{}, nil, Windows)
 	if err != nil {
 		return
 	}
 
-	linuxImages, _, err = GetImages(catalogChartPath, "", nil, []string{}, nil, Linux)
+	linuxImages, _, err = GetImages(rancherVersion, catalogChartPath, "", nil, []string{}, nil, Linux)
 	if err != nil {
 		return
 	}
