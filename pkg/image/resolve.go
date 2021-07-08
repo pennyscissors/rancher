@@ -55,10 +55,10 @@ func GetImages(rancherVersion, systemChartsPath, featureChartsPath string, exter
 	if err := fetchImages(systemCharts, imagesSet); err != nil {
 		return nil, nil, errors.Wrap(err, "failed to fetch images from system-charts")
 	}
-	// featureCharts := FeatureCharts{rancherVersion, featureChartsPath, osType}
-	// if err := fetchImages(featureCharts, imagesSet); err != nil {
-	// 	return nil, nil, errors.Wrap(err, "failed to fetch images from feature-charts")
-	// }
+	featureCharts := FeatureCharts{rancherVersion, featureChartsPath, osType}
+	if err := fetchImages(featureCharts, imagesSet); err != nil {
+		return nil, nil, errors.Wrap(err, "failed to fetch images from feature-charts")
+	}
 
 	// fetch images from system images
 	if err := fetchImagesFromSystem(rkeSystemImages, osType, imagesSet); err != nil {

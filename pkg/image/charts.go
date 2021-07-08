@@ -1,8 +1,12 @@
 package image
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +17,10 @@ import (
 	"helm.sh/helm/v3/pkg/repo"
 
 	"gopkg.in/yaml.v2"
+)
+
+const (
+	RancherVersionAnnotationMapKey = "catalog.cattle.io/rancher-version"
 )
 
 type ResolveCharts interface {
@@ -32,6 +40,12 @@ type ChartVersion struct {
 }
 
 type SystemCharts struct {
+	rancherVersion string
+	repoPath       string
+	osType         OSType
+}
+
+type FeatureCharts struct {
 	rancherVersion string
 	repoPath       string
 	osType         OSType
@@ -136,6 +150,74 @@ func (sc SystemCharts) pickImagesFromAllValues(imagesSet map[string]map[string]b
 			}
 			chartNameAndVersion := fmt.Sprintf("%s:%s", version.Name, version.Version)
 			if err = pickImagesFromValuesMap(imagesSet, values, chartNameAndVersion, sc.osType); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// Get all feature charts from the index's entries
+func (fc FeatureCharts) getChartVersionsFromIndex() (ChartVersions, error) {
+	if fc.repoPath == "" {
+		return nil, errors.New("invalid path to feature-charts repository")
+	}
+	indexFilePath := filepath.Join(fc.repoPath, "index.yaml")
+	index, err := repo.LoadIndexFile(indexFilePath)
+	if err != nil {
+		return nil, err
+	}
+	if len(index.Entries) <= 0 {
+		return nil, errors.New("no entries in index file")
+	}
+	// Convert repo.ChartValues to ChartVersion wrapper type
+	var chartVersions ChartVersions
+	for _, versions := range index.Entries {
+		for _, version := range versions {
+			// Skip crd charts
+			if strings.Contains(version.Name, "crd") {
+				continue
+			}
+			chartVersions = append(chartVersions, &ChartVersion{
+				ChartVersion: version,
+			})
+		}
+	}
+	return chartVersions, nil
+}
+
+// Filter a feature chart based on whether the rancher version constraint annotation satisfies the rancher version tag
+func (fc FeatureCharts) filterFunc(version ChartVersion) (bool, error) {
+	constraintStr, ok := version.Annotations[RancherVersionAnnotationMapKey]
+	if !ok {
+		// Log a warning when a chart doesn't have the rancher-version annotation, but return true so that images are exported.
+		logrus.Warnf("feature chart: %s:%s does not have the \"%s\" annotation set", version.Name, version.Version, RancherVersionAnnotationMapKey)
+		return true, nil
+	}
+	isInRange, err := IsRancherVersionInRange(fc.rancherVersion, constraintStr)
+	if err != nil {
+		return false, err
+	}
+	return isInRange, nil
+}
+
+// Pick all images from all the values files in a slice of feature charts
+func (fc FeatureCharts) pickImagesFromAllValues(imagesSet map[string]map[string]bool, chartVersions ChartVersions) error {
+	for _, version := range chartVersions {
+		versionTgz, err := os.Open(version.URLs[0])
+		if err != nil {
+			return err
+		}
+		// Find values.yaml files in tgz
+		valuesSlice, err := getDecodedValuesFromTgz(versionTgz, fc.repoPath)
+		if err != nil {
+			logrus.Info(err)
+			continue
+		}
+		chartNameAndVersion := fmt.Sprintf("%s:%s", version.Name, version.Version)
+		for _, values := range valuesSlice {
+			// Walk values.yaml and add images to set
+			if err = pickImagesFromValuesMap(imagesSet, values, chartNameAndVersion, fc.osType); err != nil {
 				return err
 			}
 		}
@@ -265,6 +347,39 @@ func decodeValues(path string) (map[interface{}]interface{}, error) {
 	return values, nil
 }
 
+// Decode all values files from a chart's tarball
+func getDecodedValuesFromTgz(r io.Reader, repoPath string) ([]map[interface{}]interface{}, error) {
+	var valuesSlice []map[interface{}]interface{}
+	gzr, err := gzip.NewReader(r)
+	if err != nil {
+		return nil, err
+	}
+	defer gzr.Close()
+	tr := tar.NewReader(gzr)
+	for {
+		header, err := tr.Next()
+		switch {
+		// if no more files are found return
+		case err == io.EOF:
+			return valuesSlice, nil
+			// return any other error
+		case err != nil:
+			return nil, err
+			// if the header is nil, just skip it (not sure how this happens)
+		case header == nil || header.Typeflag == tar.TypeDir:
+			continue
+		case header.Typeflag == tar.TypeReg:
+			if isValuesFile(header.Name) {
+				values, err := decodeValues(filepath.Join(repoPath, header.Name))
+				if err != nil {
+					return nil, err
+				}
+				valuesSlice = append(valuesSlice, values)
+			}
+		}
+	}
+}
+
 // Decode a yaml file
 func decodeYAML(input string, target interface{}) error {
 	data, err := ioutil.ReadFile(input)
@@ -272,4 +387,9 @@ func decodeYAML(input string, target interface{}) error {
 		return err
 	}
 	return yaml.Unmarshal(data, target)
+}
+
+func isValuesFile(path string) bool {
+	basename := filepath.Base(path)
+	return basename == "values.yaml" || basename == "values.yml"
 }
